@@ -409,7 +409,7 @@ resource "aws_db_subnet_group" "main" {
 resource "aws_db_instance" "main" {
   identifier        = "${var.project_name}-postgres"
   engine            = "postgres"
-  engine_version    = "15.4"
+  engine_version    = "15.12"
   instance_class    = "db.t3.micro"
   allocated_storage = 20
   storage_type      = "gp3"
@@ -847,6 +847,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "static_assets" {
     id     = "expire-old-versions"
     status = "Enabled"
 
+    filter {}
+
     noncurrent_version_expiration {
       noncurrent_days = 30
     }
@@ -855,6 +857,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "static_assets" {
   rule {
     id     = "transition-to-ia"
     status = "Enabled"
+
+    filter {}
 
     transition {
       days          = 90
@@ -1001,155 +1005,4 @@ resource "aws_cloudfront_distribution" "main" {
     }
   }
 
-  # Default cache behavior -> ALB (app traffic)
-  default_cache_behavior {
-    allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
-    cached_methods         = ["GET", "HEAD"]
-    target_origin_id       = "alb_origin"
-    viewer_protocol_policy = "redirect-to-https"
-    compress               = true
-    cache_policy_id        = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad" # CachingDisabled managed policy
-
-    forwarded_values {
-      query_string = true
-      headers      = ["Host", "Authorization", "Accept", "Accept-Language"]
-      cookies {
-        forward = "all"
-      }
-    }
-  }
-
-  # Static assets behavior -> S3
-  ordered_cache_behavior {
-    path_pattern           = "/static/*"
-    allowed_methods        = ["GET", "HEAD", "OPTIONS"]
-    cached_methods         = ["GET", "HEAD"]
-    target_origin_id       = "s3_origin"
-    viewer_protocol_policy = "redirect-to-https"
-    compress               = true
-
-    forwarded_values {
-      query_string = false
-      cookies {
-        forward = "none"
-      }
-    }
-
-    min_ttl     = 0
-    default_ttl = 86400
-    max_ttl     = 31536000
-  }
-
-  restrictions {
-    geo_restriction {
-      restriction_type = "none"
-    }
-  }
-
-  viewer_certificate {
-    cloudfront_default_certificate = true
-  }
-
-  tags = {
-    Name = "${var.project_name}-cloudfront"
-  }
-}
-
-# ------------------------------------------------------------
-# CloudWatch Alarms
-# ------------------------------------------------------------
-resource "aws_cloudwatch_metric_alarm" "ecs_cpu_high" {
-  alarm_name          = "${var.project_name}-ecs-cpu-high"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 2
-  metric_name         = "CPUUtilization"
-  namespace           = "AWS/ECS"
-  period              = 60
-  statistic           = "Average"
-  threshold           = 80
-  alarm_description   = "ECS CPU utilization is too high"
-
-  dimensions = {
-    ClusterName = aws_ecs_cluster.main.name
-    ServiceName = aws_ecs_service.app.name
-  }
-
-  tags = {
-    Name = "${var.project_name}-cpu-alarm"
-  }
-}
-
-resource "aws_cloudwatch_metric_alarm" "rds_cpu_high" {
-  alarm_name          = "${var.project_name}-rds-cpu-high"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 2
-  metric_name         = "CPUUtilization"
-  namespace           = "AWS/RDS"
-  period              = 60
-  statistic           = "Average"
-  threshold           = 80
-  alarm_description   = "RDS CPU utilization is too high"
-
-  dimensions = {
-    DBInstanceIdentifier = aws_db_instance.main.identifier
-  }
-
-  tags = {
-    Name = "${var.project_name}-rds-cpu-alarm"
-  }
-}
-
-resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
-  alarm_name          = "${var.project_name}-alb-5xx"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 2
-  metric_name         = "HTTPCode_Target_5XX_Count"
-  namespace           = "AWS/ApplicationELB"
-  period              = 60
-  statistic           = "Sum"
-  threshold           = 10
-  alarm_description   = "ALB 5xx errors are too high"
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    LoadBalancer = aws_lb.main.arn_suffix
-  }
-
-  tags = {
-    Name = "${var.project_name}-alb-5xx-alarm"
-  }
-}
-
-# ------------------------------------------------------------
-# Outputs
-# ------------------------------------------------------------
-output "cloudfront_url" {
-  description = "CloudFront distribution URL (primary app endpoint)"
-  value       = "https://${aws_cloudfront_distribution.main.domain_name}"
-}
-
-output "alb_dns_name" {
-  description = "ALB DNS name"
-  value       = aws_lb.main.dns_name
-}
-
-output "ecr_repository_url" {
-  description = "ECR repository URL"
-  value       = aws_ecr_repository.app.repository_url
-}
-
-output "db_endpoint" {
-  description = "RDS primary endpoint"
-  value       = aws_db_instance.main.endpoint
-  sensitive   = true
-}
-
-output "s3_bucket_name" {
-  description = "S3 static assets bucket name"
-  value       = aws_s3_bucket.static_assets.bucket
-}
-
-output "cloudfront_distribution_id" {
-  description = "CloudFront distribution ID"
-  value       = aws_cloudfront_distribution.main.id
-}
+  # Default cache behavior -> ALB (

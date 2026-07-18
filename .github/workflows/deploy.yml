@@ -102,6 +102,8 @@ jobs:
     name: Provision Infrastructure
     runs-on: ubuntu-latest
     needs: [build]
+    env:
+      IMAGE_URI: ${{ needs.build.outputs.image_uri }}
 
     steps:
       - name: Checkout
