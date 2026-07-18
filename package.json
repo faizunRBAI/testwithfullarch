@@ -6,7 +6,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "lint": "echo \"No linter configured\" && exit 0",
+    "test": "echo \"No tests configured\" && exit 0"
   },
   "dependencies": {
     "express": "^5.1.0",
