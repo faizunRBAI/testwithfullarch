@@ -40,10 +40,41 @@ jobs:
 
       - name: Empty S3 bucket before destroy
         run: |
-          BUCKET_NAME=$(terraform -chdir=terraform output -raw s3_bucket_name 2>/dev/null || true)
+          # Use terraform output only if the output actually exists in state;
+          # redirect ALL output (stdout+stderr) through grep so ANSI warnings
+          # never bleed into BUCKET_NAME.
+          BUCKET_NAME=$(terraform -chdir=terraform output -raw s3_bucket_name 2>/dev/null | grep -E '^[a-zA-Z0-9][a-zA-Z0-9._-]{1,61}[a-zA-Z0-9]$' || true)
           if [ -n "${BUCKET_NAME}" ]; then
             echo "Emptying S3 bucket: ${BUCKET_NAME}"
             aws s3 rm "s3://${BUCKET_NAME}" --recursive || true
+          else
+            echo "No valid S3 bucket name found in Terraform outputs — skipping bucket empty."
+          fi
+
+      - name: Purge ECR images before destroy
+        run: |
+          # Force-delete all images from the ECR repository before running
+          # terraform destroy. This is necessary because force_delete=true in
+          # the Terraform config is only effective when the attribute is
+          # present in the Terraform state; if the repo was originally created
+          # without it, Terraform will not pass force-delete to the AWS API
+          # and destroy will fail with RepositoryNotEmptyException.
+          REPO_NAME="${{ secrets.PROJECT_NAME }}-app"
+          echo "Checking ECR repository: ${REPO_NAME}"
+          IMAGE_IDS=$(aws ecr list-images \
+            --repository-name "${REPO_NAME}" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query 'imageIds[*]' \
+            --output json 2>/dev/null || echo '[]')
+          if [ "${IMAGE_IDS}" != '[]' ] && [ -n "${IMAGE_IDS}" ]; then
+            echo "Deleting images from ${REPO_NAME}..."
+            aws ecr batch-delete-image \
+              --repository-name "${REPO_NAME}" \
+              --region "${{ secrets.AWS_REGION }}" \
+              --image-ids "${IMAGE_IDS}" || true
+            echo "ECR images deleted."
+          else
+            echo "No images found in ${REPO_NAME} — skipping."
           fi
 
       - name: Terraform destroy
